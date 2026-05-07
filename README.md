@@ -210,3 +210,105 @@ export xray.
 # License
 
 This repository is based on the MIT License.
+
+---
+
+## Android Build with GitHub Actions
+
+### Quick Start
+
+To build an Android library using GitHub Actions:
+
+```bash
+# Create a new branch for your build
+git checkout -b android-build-<version>
+
+# Edit .github/workflows/android-build.yml to set desired options, then:
+
+# Option 1: Run via GitHub UI (easiest)
+# Go to Actions tab → Android Build → "Run workflow" button
+# Select branch and click "Run workflow"
+
+# Option 2: Trigger from command line
+git push origin android-build-<version>
+```
+
+### Workflow Options
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `android_api_level` | 21 | Minimum Android API level (minSdkVersion) |
+| `go_version` | 1.26.2 | Go version for compilation |
+| `python_version` | 3.11 | Python version for build scripts |
+
+### Output Artifacts
+
+After a successful build, the following files are generated:
+
+- **libXray-sources.jar** - Java source JAR containing Go bindings
+- **libXray.aar** - Android Archive with compiled library and resources
+
+Both artifacts are automatically uploaded to GitHub Actions artifacts storage and retained for 30 days.
+
+### Using in Your Android Project
+
+#### Gradle (Kotlin/Java)
+
+Add to your `build.gradle`:
+
+```kotlin
+dependencies {
+    // Replace with actual artifact path or use a release tag
+    implementation files('libXray-sources.jar')
+}
+```
+
+Or if using a released version from artifacts:
+
+```kotlin
+// Example for a specific run number (replace with actual)
+implementation("com.github.i3sey.libXrayactions:libXray-android-<RUN_NUMBER>:libXray-sources.jar")
+```
+
+#### Android Studio Import
+
+1. Right-click your project → **Add Library to Project**
+2. Navigate to the JAR file from artifacts
+3. Sync Gradle files
+
+### Reusable Action
+
+The `.github/actions/android-build/action.yml` can be imported into other workflows:
+
+```yaml
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Android Library
+        uses: i3sey/libXrayactions/.github/actions/android-build@main
+        with:
+          android_api_level: 25
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **gomobile not found**: The workflow automatically installs gomobile on the first run. Subsequent runs use the cached installation.
+
+2. **Build timeout (60 min default)**: For large projects or complex configurations, consider increasing `build_timeout_minutes` in `.github/vars/android-config.yml`.
+
+3. **macOS vs Ubuntu**: macOS is recommended for best gomobile compatibility. If using Ubuntu, ensure Xcode command-line tools are installed via Homebrew.
+
+#### Checking Build Status
+
+```bash
+# View the latest build summary
+git log --oneline -1 | head -n 1
+
+# Check artifacts in GitHub UI
+# Actions → Android Build → Select run → Artifacts tab
+```

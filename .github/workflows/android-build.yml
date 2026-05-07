@@ -1,0 +1,163 @@
+# Android Build Workflow
+# Builds libXray as JAR/AAR files for Android integration
+
+name: Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      android_api_level:
+        description: 'Android API Level (minSdkVersion)'
+        required: true
+        default: '21'
+        type: choice
+        options:
+          - '21'
+          - '23'
+          - '24'
+          - '25'
+          - '26'
+          - '27'
+          - '28'
+          - '29'
+          - '30'
+          - '31'
+          - '32'
+          - '33'
+          - '34'
+          - '35'
+
+env:
+  GO_VERSION: '1.26.2'
+  PYTHON_VERSION: '3.11'
+  LIBXRAY_MOD_NAME: 'github.com/xtls/libxray'
+
+jobs:
+  build-android:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    
+    outputs:
+      artifacts: ${{ steps.build.outputs.artifacts }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install build dependencies
+        run: |
+          # Install pip packages required by the build script
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Configure Android API Level
+        id: config
+        run: |
+          API_LEVEL="${{ github.event.inputs.android_api_level || '21' }}"
+          echo "android_api_level=$API_LEVEL" >> $GITHUB_OUTPUT
+          echo "Building with Android API level: $API_LEVEL"
+
+      - name: Prepare gomobile environment
+        id: prepare
+        run: |
+          # Initialize Go module (will be done by build script)
+          
+          # Install and initialize gomobile
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          if [ $? -ne 0 ]; then
+            echo "gomobile install failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
+          gomobile init
+          if [ $? -ne 0 ]; then
+            echo "gomobile init failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          
+          # Update gomobile dependencies
+          go get golang.org/x/mobile/cmd/gomobile
+          go get google.golang.org/genproto
+
+      - name: Build Android library
+        id: build
+        run: |
+          cd build
+          
+          # Run the Android build script
+          python3 main.py android
+          
+          if [ $? -ne 0 ]; then
+            echo "Build failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libXray-android-${{ github.run_number }}
+          path: |
+            ../libXray-sources.jar
+            ../libXray.aar
+          retention-days: 30
+
+      - name: Output build summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts Generated:" >> $GITHUB_STEP_SUMMARY
+          echo "- `libXray-sources.jar`" >> $GITHUB_STEP_SUMMARY
+          echo "- `libXray.aar`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Show file sizes
+          if [ -f ../libXray-sources.jar ]; then
+            JAR_SIZE=$(stat --format=%s ../libXray-sources.jar 2>/dev/null || stat -f%z ../libXray-sources.jar)
+            echo "### File Sizes:" >> $GITHUB_STEP_SUMMARY
+            echo "- `libXray-sources.jar`: $((JAR_SIZE / 1024)) KB" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f ../libXray.aar ]; then
+            AAR_SIZE=$(stat --format=%s ../libXray.aar 2>/dev/null || stat -f%z ../libXray.aar)
+            echo "- `libXray.aar`: $((AAR_SIZE / 1024)) KB" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create release notes
+        run: |
+          # Generate a summary of what was built
+          echo "# Android Build Release Notes" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Run Information" >> RELEASE_NOTES.md
+          echo "- Workflow ID: \${{ github.run_id }}" >> RELEASE_NOTES.md
+          echo "- Run Number: \${{ github.run_number }}" >> RELEASE_NOTES.md
+          echo "- Branch: \${{ github.ref_name || 'main' }}" >> RELEASE_NOTES.md
+          echo "- API Level: \${{ steps.config.outputs.android_api_level || '21' }}" >> RELEASE_NOTES.md
+          echo "- Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "## Artifacts" >> RELEASE_NOTES.md
+
+          if [ -f ../libXray-sources.jar ]; then
+            echo "- ✅ \`libXray-sources.jar\`" >> RELEASE_NOTES.md
+          else
+            echo "- ⚠️  \`${{ github.ref_name || 'main' }}\` (missing)" >> RELEASE_NOTES.md
+          fi
+
+          if [ -f ../libXray.aar ]; then
+            echo "- ✅ \`libXray.aar\`" >> RELEASE_NOTES.md
+          else
+            echo "- ⚠️  \`${{ github.ref_name || 'main' }}\` (missing)" >> RELEASE_NOTES.md
+          fi
+
+          cat RELEASE_NOTES.md >> $GITHUB_STEP_SUMMARY

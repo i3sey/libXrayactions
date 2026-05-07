@@ -1,0 +1,45 @@
+# Android Build Configuration Variables
+# These variables can be overridden per-workflow or via environment
+
+# Go version for building
+go_version: '1.26.2'
+
+# Python version for build scripts
+python_version: '3.11'
+
+# Default Android API level (minSdkVersion)
+default_android_api_level: 21
+
+# Output formats (comma-separated)
+# Options: jar, aar, or both
+output_formats:
+  - jar
+  - aar
+
+# Build timeout in minutes
+build_timeout_minutes: 60
+
+# Artifact retention days
+artifact_retention_days: 30
+
+# Matrix build configurations
+matrix_os:
+  - macos-latest    # Recommended for best gomobile compatibility
+  - ubuntu-latest   # Alternative, may require additional setup
+
+# Environment variables to pass to build process
+build_env:
+  CGO_ENABLED: '1'
+  GOOS: ''          # Empty means current OS (will be overridden by gomobile)
+  GOARCH: 'amd64'   # Can be changed for ARM builds
+
+# Additional tools to install if missing
+required_tools:
+  - git
+  - python3
+  - go
+
+# Optional tools (with fallbacks)
+optional_tools:
+  - xcode           # For macOS builds
+    fallback: 'brew install --cask command-line-tools'

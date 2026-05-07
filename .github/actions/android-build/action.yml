@@ -1,0 +1,136 @@
+# Android Build Reusable Action
+# Can be used in other workflows or imported by the main workflow
+
+name: 'Android Build'
+description: 'Builds libXray as JAR/AAR files for Android integration using gomobile'
+inputs:
+  android_api_level:
+    description: 'Android API Level (minSdkVersion)'
+    required: false
+    default: '21'
+  go_version:
+    description: 'Go version to use'
+    required: false
+    default: '1.26.2'
+  python_version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+  output_format:
+    description: 'Output format(s): jar, aar, or both (comma-separated)'
+    required: false
+    default: 'jar,aar'
+
+outputs:
+  artifacts_path:
+    description: 'Path to the generated artifact files'
+  build_status:
+    description: 'Build status (success/failed)'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go_version }}
+
+    - name: Install Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        # Install pip packages required by the build script
+        python -m pip install --upgrade pip
+        python -m pip install requests
+
+    - name: Prepare gomobile environment
+      shell: bash
+      run: |
+        echo "Preparing gomobile environment..."
+        
+        # Install and initialize gomobile
+        go install golang.org/x/mobile/cmd/gomobile@latest
+        if [ $? -ne 0 ]; then
+          echo "::error::gomobile install failed"
+          exit 1
+        fi
+        
+        gomobile init
+        if [ $? -ne 0 ]; then
+          echo "::error::gomobile init failed"
+          exit 1
+        fi
+        
+        # Update gomobile dependencies
+        go get golang.org/x/mobile/cmd/gomobile
+        go get google.golang.org/genproto
+
+    - name: Build Android library
+      shell: bash
+      env:
+        API_LEVEL: ${{ inputs.android_api_level }}
+        OUTPUT_FORMAT: ${{ inputs.output_format }}
+      run: |
+        echo "Building with Android API level: $API_LEVEL"
+        
+        cd build
+        
+        # Run the Android build script
+        python3 main.py android
+        
+        if [ $? -ne 0 ]; then
+          echo "::error::Android build failed"
+          exit 1
+        fi
+
+    - name: Verify artifacts
+      shell: bash
+      run: |
+        echo "Verifying generated artifacts..."
+        
+        ARTIFACTS_DIR="${{ github.workspace }}"
+        
+        # Check for expected files
+        if [ -f "${ARTIFACTS_DIR}/libXray-sources.jar" ]; then
+          JAR_SIZE=$(stat --format=%s "${ARTIFACTS_DIR}/libXray-sources.jar")
+          echo "✅ libXray-sources.jar: $((JAR_SIZE / 1024)) KB"
+        else
+          echo "⚠️  libXray-sources.jar not found"
+        fi
+        
+        if [ -f "${ARTIFACTS_DIR}/libXray.aar" ]; then
+          AAR_SIZE=$(stat --format=%s "${ARTIFACTS_DIR}/libXray.aar")
+          echo "✅ libXray.aar: $((AAR_SIZE / 1024)) KB"
+        else
+          echo "⚠️  libXray.aar not found"
+        fi
+
+    - name: Output paths
+      shell: bash
+      run: |
+        echo "## Build Output Paths" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        ARTIFACTS_DIR="${{ github.workspace }}"
+        
+        if [ -f "${ARTIFACTS_DIR}/libXray-sources.jar" ]; then
+          echo "- **JAR File:** `${ARTIFACTS_DIR}/libXray-sources.jar`" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ -f "${ARTIFACTS_DIR}/libXray.aar" ]; then
+          echo "- **AAR File:** `${ARTIFACTS_DIR}/libXray.aar`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload artifacts (if any were created)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: libXray-android-${{ github.run_number }}
+        path: |
+          ../libXray-sources.jar
+          ../libXray.aar
+        retention-days: 30
