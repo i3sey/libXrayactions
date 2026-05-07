@@ -109,8 +109,8 @@ jobs:
         with:
           name: libXray-android-${{ github.run_number }}
           path: |
-            ../libXray-sources.jar
-            ../libXray.aar
+            ${{ github.workspace }}/libXray-sources.jar
+            ${{ github.workspace }}/libXray.aar
           retention-days: 30
 
       - name: Output build summary
